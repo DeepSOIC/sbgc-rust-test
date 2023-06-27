@@ -6,3 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+simplebgc = { git = "https://github.com/CUAir/simplebgc-rs.git", version = "0.1.0" }
+simplebgc-derive = { git = "https://github.com/CUAir/simplebgc-rs.git", version = "0.1.0" }
+tokio-serial = "5.4.3"
+tokio = { version = "1", features = ["macros", "sync", "time", "rt-multi-thread"] }
+anyhow = "1.0.71"
