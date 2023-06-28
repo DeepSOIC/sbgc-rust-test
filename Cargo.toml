@@ -13,4 +13,6 @@ simplebgc-derive = {path = "../simplebgc-rs/simplebgc-derive"}
 
 tokio-serial = "5.4.3"
 tokio = { version = "1", features = ["macros", "sync", "time", "rt-multi-thread"] }
+tokio-util = { version = "0.7.4", features = ["codec"] }
 anyhow = "1.0.71"
+futures = "0.3.28"
