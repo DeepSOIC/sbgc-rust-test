@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate structure;
+
 use tokio_serial::SerialPortBuilderExt;
 use tokio;
 use tokio_util;
@@ -5,7 +8,7 @@ use std::sync::mpsc;
 use simplebgc::{self, ParamsQuery};
 use anyhow::{Context as _, Result as _};
 use futures::{StreamExt as _, SinkExt as _};
-
+use bytes::Bytes;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,6 +55,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }).await.expect("no response from gimbal (timeout)").expect("data not received");
 
     println!("offsets: {offset_yaw}, {offset_pitch}");
+    
+    { //request realtime encoder data stream
+        let payload_struct = structure!("<BHIxxxx?xxxxxxxxx");
+        let data = payload_struct.pack(
+            88, //CMD_ID = CMD_REALTIME_DATA_CUSTOM
+            1, //INTERVAL_MS = 1, that is, each time the data is updated
+            //#1 << 3, //FRAME_CAM_ANGLE[3]
+            1 << 11, //ENCODER_RAW24[3]
+            true //SYNC_TO_DATA
+        ).unwrap();
+        messages_tx.send(
+            simplebgc::OutgoingCommand::RawMessage(simplebgc::RawMessage{
+                typ: simplebgc::constants::CMD_DATA_STREAM_INTERVAL,
+                payload: Bytes::from(data), 
+            })
+        ).await.unwrap();
+    }
+
+    loop { 
+        let msg = messages_rx.next().await.unwrap().unwrap();
+        match msg {
+            simplebgc::IncomingCommand::RawMessage(msg) => {
+                match msg.typ{
+                    simplebgc::constants::CMD_REALTIME_DATA_CUSTOM  => {
+                        println!("data!"); // #FIXME: parse
+                    }
+                    _ => {
+                        println!("unknown message #{}", msg.typ);
+                    }
+                } 
+            }
+            msg => {
+                println!("got some other message: {msg:?}");
+            }
+        }
+    }
 
     Ok(())
 }
