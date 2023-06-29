@@ -55,7 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let msg = messages_rx.next().await.unwrap().unwrap();
                 match msg {
                     simplebgc::IncomingCommand::ReadParamsExt(cmd) => {
-                        
+                        let (y,p,r) = (cmd.encoder_offset.yaw, cmd.encoder_offset.pitch, cmd.encoder_offset.roll);
+                        println!(" raw offsets y-p-r: {y}, {p}, {r}");
                         let offset_yaw = (cmd.encoder_offset.yaw as f64) / ((1 << 14) as f64);
                         let offset_pitch = (cmd.encoder_offset.pitch as f64) / ((1 << 14) as f64);
 
