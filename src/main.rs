@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate structure;
 
-use tokio_serial::SerialPortBuilderExt;
+use tokio_serial::{SerialPortBuilderExt, SerialPortBuilder, SerialPort, SerialStream};
 use tokio;
 use tokio_util;
-use std::sync::mpsc;
+use std::{sync::mpsc, borrow::BorrowMut};
 use simplebgc::{self, ParamsQuery};
 use anyhow::{Context as _, Result as _};
 use futures::{StreamExt as _, SinkExt as _};
@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_native_async()
         .with_context(|| format!("Failed to open PWM serial device {}", port))?;
 
-    let framed = tokio_util::codec::Framed::new(serial_device, simplebgc::V2Codec);
+    let framed = tokio_util::codec::Framed::new(serial_device, simplebgc::V2Codec::default());
     
     let (mut messages_tx, mut messages_rx) = framed.split();
 
