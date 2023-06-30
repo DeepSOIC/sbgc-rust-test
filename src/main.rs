@@ -13,7 +13,7 @@ use bytes::Bytes;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let baud_rate = 115_200;
-    let port = "COM14";
+    let port = "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0";
 
     let serial_device = tokio_serial::new(port, baud_rate)
         .open_native_async()
@@ -22,6 +22,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let framed = tokio_util::codec::Framed::new(serial_device, simplebgc::V2Codec::default());
     
     let (mut messages_tx, mut messages_rx) = framed.split();
+
+    let time_ref = std::time::Instant::now();
+
+    macro_rules! timestamp {
+        () => {
+            print!("{}\t", time_ref.elapsed().as_secs_f64())
+        }
+    }
 
     use tokio::time::timeout;
     use std::time::Duration;
@@ -36,14 +44,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match msg {
                 simplebgc::IncomingCommand::ReadParamsExt(cmd) => {
                     let (y,p,r) = (cmd.encoder_offset.yaw, cmd.encoder_offset.pitch, cmd.encoder_offset.roll);
-                    println!(" raw offsets y-p-r: {y}, {p}, {r}");
+                    timestamp!(); println!(" raw offsets y-p-r: {y}, {p}, {r}");
                     let offset_yaw = (cmd.encoder_offset.yaw as f64) / ((1 << 14) as f64);
                     let offset_pitch = (cmd.encoder_offset.pitch as f64) / ((1 << 14) as f64);
 
                     return Ok((messages_tx, messages_rx, offset_yaw, offset_pitch));
                 }
                 _ => {
-                    println!("got some other message while waiting for encoder offsets");
+                    timestamp!(); println!("got some other message while waiting for encoder offsets");
                 }
             }
         }
@@ -54,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     }).await.expect("no response from gimbal (timeout)").expect("data not received");
 
-    println!("offsets: {offset_yaw}, {offset_pitch}");
+    timestamp!(); println!("offsets: {offset_yaw}, {offset_pitch}");
     
     { //request realtime encoder data stream
         let payload_struct = structure!("<BHIxxxx?xxxxxxxxx");
@@ -79,15 +87,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             simplebgc::IncomingCommand::RawMessage(msg) => {
                 match msg.typ{
                     simplebgc::constants::CMD_REALTIME_DATA_CUSTOM  => {
-                        println!("data!"); // #FIXME: parse
+                        timestamp!(); println!("data!"); // #FIXME: parse
                     }
                     _ => {
-                        println!("unknown message #{}", msg.typ);
+                        timestamp!(); println!("unknown message #{}", msg.typ);
                     }
                 } 
             }
             msg => {
-                println!("got some other message: {msg:?}");
+                timestamp!(); println!("got some other message: {msg:?}");
             }
         }
     }
