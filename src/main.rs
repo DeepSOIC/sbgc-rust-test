@@ -76,32 +76,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ).await.unwrap();
     }
 
-    loop { 
-        let msg = messages_rx.next().await.unwrap().unwrap();
-        match msg {
-            simplebgc::IncomingCommand::RawMessage(msg) => {
-                match msg.typ{
-                    simplebgc::constants::CMD_REALTIME_DATA_CUSTOM  => {
-                        let msg_data: custom_messages::RealTimeDataCustom_Encoders = Payload::from_bytes(msg.payload).unwrap();
-                        let (i24(roll), i24(pitch), i24(yaw)) = (msg_data.encoder_raw24.roll, msg_data.encoder_raw24.pitch, msg_data.encoder_raw24.yaw);
-                        //convert to fractions of turn
-                        let (roll, pitch, yaw) = (roll as f64 / (1<<24) as f64, pitch as f64 / (1<<24) as f64, yaw as f64 / (1<<24) as f64);
-                        //subtract offsets
-                        let (roll, pitch, yaw) = (roll, pitch - offset_pitch, yaw - offset_yaw);
-                        // to degrees
-                        let (roll,pitch,yaw) = (roll * 360.0, pitch * 360.0, yaw * 360.0);
-                        timestamp!(); println!("{}\t{}\t", yaw, pitch);
-                    }
-                    _ => {
-                        timestamp!(); println!("unknown message #{}", msg.typ);
-                    }
-                } 
-            }
-            msg => {
-                timestamp!(); println!("got some other message: {msg:?}");
+    let rx_loop = async {
+        loop { 
+            let msg = messages_rx.next().await.unwrap().unwrap();
+            match msg {
+                simplebgc::IncomingCommand::RawMessage(msg) => {
+                    match msg.typ{
+                        simplebgc::constants::CMD_REALTIME_DATA_CUSTOM  => {
+                            let msg_data: custom_messages::RealTimeDataCustom_Encoders = Payload::from_bytes(msg.payload).unwrap();
+                            let (i24(roll), i24(pitch), i24(yaw)) = (msg_data.encoder_raw24.roll, msg_data.encoder_raw24.pitch, msg_data.encoder_raw24.yaw);
+                            //convert to fractions of turn
+                            let (roll, pitch, yaw) = (roll as f64 / (1<<24) as f64, pitch as f64 / (1<<24) as f64, yaw as f64 / (1<<24) as f64);
+                            //subtract offsets
+                            let (roll, pitch, yaw) = (roll, pitch - offset_pitch, yaw - offset_yaw);
+                            // to degrees
+                            let (roll,pitch,yaw) = (roll * 360.0, pitch * 360.0, yaw * 360.0);
+                            timestamp!(); println!("{}\t{}\t", yaw, pitch);
+                        }
+                        _ => {
+                            timestamp!(); println!("unknown message #{}", msg.typ);
+                        }
+                    } 
+                }
+                msg => {
+                    timestamp!(); println!("got some other message: {msg:?}");
+                }
             }
         }
-    }
+    };
+
+    let control_loop = async {
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+        
+        //move with constant speed
+        use simplebgc::{ControlData, ControlFormat, AxisControlMode, AxisControlState, AxisControlFlags, RollPitchYaw, AxisControlParams};
+        use enumflags2::BitFlags;
+        messages_tx.send(
+            simplebgc::OutgoingCommand::Control(ControlData { 
+                mode: ControlFormat::Legacy(AxisControlState{
+                    mode: AxisControlMode::Speed,
+                    flags: 0.try_into().unwrap() //is there a way to avoid this nonsense and just say "0"?
+                }), 
+                axes: RollPitchYaw { 
+                    roll: AxisControlParams{speed: 0, angle: 0}, 
+                    pitch: AxisControlParams{speed: 0, angle: 0}, 
+                    yaw: AxisControlParams{speed: (100.0/0.1220740379 as f64).round() as i16, angle: 0} //100 deg/s
+                } 
+            })
+        ).await.unwrap();
+
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+
+        //home
+        messages_tx.send(
+            simplebgc::OutgoingCommand::Control(ControlData { 
+                mode: ControlFormat::Legacy(AxisControlState{
+                    mode: AxisControlMode::RelFrame,
+                    flags: AxisControlFlags::MixFollow.into()
+                }), 
+                axes: RollPitchYaw { 
+                    roll: AxisControlParams{speed: 0, angle: 0}, 
+                    pitch: AxisControlParams{speed: 0, angle: 0}, 
+                    yaw: AxisControlParams{speed: 0, angle: 0}
+                } 
+            })
+        ).await.unwrap();
+        println!("should move now");
+
+    };
+
+    futures::join!(rx_loop, control_loop);
 
     Ok(())
 }
