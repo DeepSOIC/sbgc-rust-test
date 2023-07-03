@@ -1,11 +1,11 @@
-#[macro_use]
-extern crate structure;
+pub(crate) mod custom_messages;
+use custom_messages::{i24};
 
 use tokio_serial::{SerialPortBuilderExt, SerialPortBuilder, SerialPort, SerialStream};
 use tokio;
 use tokio_util;
 use std::{sync::mpsc, borrow::BorrowMut};
-use simplebgc::{self, ParamsQuery};
+use simplebgc::{self, ParamsQuery, Payload};
 use anyhow::{Context as _, Result as _};
 use futures::{StreamExt as _, SinkExt as _};
 use bytes::Bytes;
@@ -65,18 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     timestamp!(); println!("offsets: {offset_yaw}, {offset_pitch}");
     
     { //request realtime encoder data stream
-        let payload_struct = structure!("<BHIxxxx?xxxxxxxxx");
-        let data = payload_struct.pack(
-            88, //CMD_ID = CMD_REALTIME_DATA_CUSTOM
-            1, //INTERVAL_MS = 1, that is, each time the data is updated
-            //#1 << 3, //FRAME_CAM_ANGLE[3]
-            1 << 11, //ENCODER_RAW24[3]
-            true //SYNC_TO_DATA
-        ).unwrap();
+        let mut msg_data = custom_messages::RequestStreamInterval_Custom::default();
+        msg_data.interval = 1;
+        msg_data.realtime_data_custom_flags = 1 << 11; //ENCODER_RAW24[3]
+        msg_data.sync_to_data = true;
+
         messages_tx.send(
             simplebgc::OutgoingCommand::RawMessage(simplebgc::RawMessage{
                 typ: simplebgc::constants::CMD_DATA_STREAM_INTERVAL,
-                payload: Bytes::from(data), 
+                payload: Payload::to_bytes(&msg_data), 
             })
         ).await.unwrap();
     }
@@ -87,7 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             simplebgc::IncomingCommand::RawMessage(msg) => {
                 match msg.typ{
                     simplebgc::constants::CMD_REALTIME_DATA_CUSTOM  => {
-                        timestamp!(); println!("data!"); // #FIXME: parse
+                        let msg_data: custom_messages::RealTimeDataCustom_Encoders = Payload::from_bytes(msg.payload).unwrap();
+                        let (i24(roll), i24(pitch), i24(yaw)) = (msg_data.encoder_raw24.roll, msg_data.encoder_raw24.pitch, msg_data.encoder_raw24.yaw);
+                        //convert to fractions of turn
+                        let (roll, pitch, yaw) = (roll as f64 / (1<<24) as f64, pitch as f64 / (1<<24) as f64, yaw as f64 / (1<<24) as f64);
+                        //subtract offsets
+                        let (roll, pitch, yaw) = (roll, pitch - offset_pitch, yaw - offset_yaw);
+                        // to degrees
+                        let (roll,pitch,yaw) = (roll * 360.0, pitch * 360.0, yaw * 360.0);
+                        timestamp!(); println!("{}\t{}\t", yaw, pitch);
                     }
                     _ => {
                         timestamp!(); println!("unknown message #{}", msg.typ);
