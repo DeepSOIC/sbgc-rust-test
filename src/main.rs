@@ -1,14 +1,12 @@
 pub(crate) mod custom_messages;
 use custom_messages::{i24};
 
-use tokio_serial::{SerialPortBuilderExt, SerialPortBuilder, SerialPort, SerialStream};
+use tokio_serial::{SerialPortBuilderExt,};
 use tokio;
 use tokio_util;
-use std::{sync::mpsc, borrow::BorrowMut};
 use simplebgc::{self, ParamsQuery, Payload};
 use anyhow::{Context as _, Result as _};
 use futures::{StreamExt as _, SinkExt as _};
-use bytes::Bytes;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
